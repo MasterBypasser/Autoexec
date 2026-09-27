@@ -1,0 +1,142 @@
+-- Wait for the game to load before starting anything
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
+-- Services
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+
+-- Ensure Player exists
+local player = Players.LocalPlayer or Players.PlayerAdded:Wait()
+local currentGameId = game.PlaceId
+local currentJobId = game.JobId
+local excludedGames = {10449761463, 123456789}
+local tsbId = 10449761463
+
+---------------------------------------------------------
+-- COMMAND LOGIC
+---------------------------------------------------------
+
+local function Rejoin()
+    TeleportService:TeleportToPlaceInstance(currentGameId, currentJobId, player)
+end
+
+local function ServerHop()
+    local url = "https://games.roblox.com/v1/games/" .. currentGameId .. "/servers/Public?sortOrder=Asc&limit=100"
+    local success, result = pcall(function()
+        return HttpService:JSONDecode(game:HttpGet(url))
+    end)
+    
+    if success and result and result.data then
+        local possibleServers = {}
+        for _, server in ipairs(result.data) do
+            if type(server) == "table" and server.id ~= currentJobId and server.playing <= (server.maxPlayers - 2) then
+                table.insert(possibleServers, server.id)
+            end
+        end
+
+        if #possibleServers > 0 then
+            local randomTarget = possibleServers[math.random(1, #possibleServers)]
+            TeleportService:TeleportToPlaceInstance(currentGameId, randomTarget, player)
+        else
+            TeleportService:Teleport(currentGameId, player)
+        end
+    else
+        TeleportService:Teleport(currentGameId, player)
+    end
+end
+
+local function JoinServerID(input)
+    local targetId = input:gsub("/e joinserver ", ""):gsub(" ", "")
+    if targetId and #targetId > 10 then
+        TeleportService:TeleportToPlaceInstance(currentGameId, targetId, player)
+    else
+        StarterGui:SetCore("SendNotification", {Title = "Invalid ID", Text = "Please provide a valid Server ID.", Duration = 3})
+    end
+end
+
+local function ForceReset()
+    local character = player.Character
+    if character then
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then humanoid.Health = 0 end
+        for _, v in ipairs(character:GetChildren()) do
+            if v:IsA("LocalScript") or v:IsA("Script") then v:Destroy() end
+        end
+    end
+end
+
+local function CopyServerID()
+    setclipboard(game.JobId)
+    StarterGui:SetCore("SendNotification", {Title = "Server ID", Text = "Copied to clipboard!", Duration = 3})
+end
+
+---------------------------------------------------------
+-- CHAT LISTENER
+---------------------------------------------------------
+
+local function SetupChatListener()
+    player.Chatted:Connect(function(msg)
+        local m = msg:lower()
+        if m == "/e rj" then
+            Rejoin()
+        elseif m == "/e serverhop" then
+            ServerHop()
+        elseif m == "/e reset" then
+            ForceReset()
+        elseif m == "/e copyserverid" then
+            CopyServerID()
+        elseif m:sub(1, 13) == "/e joinserver" then
+            JoinServerID(msg)
+        end
+    end)
+end
+
+SetupChatListener()
+
+---------------------------------------------------------
+-- INSTANT EXECUTION: EXTERNAL SCRIPTS & TSB FIX
+---------------------------------------------------------
+
+task.spawn(function()
+    local function isExcluded(id, list)
+        for _, v in ipairs(list) do if v == id then return true end end
+        return false
+    end
+
+    -- 1. Main Global Script (Immediate)
+    if not isExcluded(currentGameId, excludedGames) then
+        pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/MasterBypasser/Autoexec/refs/heads/main/Troll"))() end)
+    end
+
+    -- 2. TSB Specific Logic (Immediate)
+    if currentGameId == tsbId then
+        pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/MasterBypasser/tsb-script/refs/heads/main/M1%20reset"))() end)
+        
+        -- TSB Cutscene Chat Fixer (Still runs in background loop)
+        task.spawn(function()
+            while task.wait(0.5) do
+                local success, isEnabled = pcall(function() 
+                    return StarterGui:GetCoreGuiEnabled(Enum.CoreGuiType.Chat) 
+                end)
+                
+                if success and not isEnabled then
+                    pcall(function() 
+                        StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, true) 
+                    end)
+                end
+            end
+        end)
+    end
+
+    -- 3. Emote GUI Logic (Immediate once character loads)
+    local character = player.Character or player.CharacterAdded:Wait()
+    local humanoid = character:WaitForChild("Humanoid", 10)
+    
+    if humanoid and humanoid.RigType == Enum.HumanoidRigType.R15 then
+        pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/MasterBypasser/Autoexec/refs/heads/main/Emotes"))() end)
+    end
+end)
